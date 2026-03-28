@@ -20,6 +20,11 @@ def stable_scope(kind: str, unique_id: str, source_key: str) -> str:
     return _sha1((kind, unique_id or "default", source_key))
 
 
+def format_output_filename(path: Path, with_ext: bool) -> str:
+    """根据开关返回文件名（带后缀或不带后缀）。"""
+    return path.name if with_ext else path.stem
+
+
 class IteratorStateStore:
     """定义迭代游标的持久化存取契约。
 

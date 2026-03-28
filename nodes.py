@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from PIL import Image, ImageOps
 
-from .iterator_core import IteratorStateStore, stable_scope
+from .iterator_core import IteratorStateStore, format_output_filename, stable_scope
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif"}
@@ -428,7 +428,7 @@ class IteratorLoadImage:
         )
         selected = paths[index]
         image, mask = _load_image_tensor(selected)
-        file_name = selected.name if filename_with_ext else selected.stem
+        file_name = format_output_filename(selected, filename_with_ext)
         return image, mask, str(selected), file_name, index, len(paths)
 
 
@@ -534,7 +534,7 @@ class IteratorLoadVideoPath:
             scope_key=scope_key, total=len(paths), reset=reset, loop_mode=loop_mode
         )
         selected = paths[index]
-        file_name = selected.name if filename_with_ext else selected.stem
+        file_name = format_output_filename(selected, filename_with_ext)
         return str(selected), file_name, index, len(paths)
 
 
