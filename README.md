@@ -24,6 +24,9 @@ Language: **English** | [简体中文](./README.zh-CN.md)
 - `load_always` (image/video nodes)
   - `False`: allow normal cache checks
   - `True`: force node execution each run
+- `enable_log` (all nodes)
+  - `False`: no runtime log output
+  - `True`: print node runtime traces to ComfyUI console
 
 ## Nodes
 
@@ -42,6 +45,7 @@ Supports: `.jpg/.jpeg/.png/.webp/.bmp/.tif/.tiff`
 | `loop_mode` | `ENUM` | `stop` | `loop/stop/hold_last`. |
 | `reset` | `BOOLEAN` | `False` | Edge-triggered reset signal. |
 | `load_always` | `BOOLEAN` | `False` | Force execution every run. |
+| `enable_log` | `BOOLEAN` | `False` | Print iterator debug logs for this node run. |
 | `filename_with_ext` | `BOOLEAN` | `True` | Whether `FILE_NAME` includes extension. |
 
 #### Outputs
@@ -70,6 +74,7 @@ Supports: `.mp4/.mov/.mkv/.avi/.webm/.m4v/.mpg/.mpeg/.wmv/.flv`
 | `loop_mode` | `ENUM` | `stop` | `loop/stop/hold_last`. |
 | `reset` | `BOOLEAN` | `False` | Edge-triggered reset signal. |
 | `load_always` | `BOOLEAN` | `False` | Force execution every run. |
+| `enable_log` | `BOOLEAN` | `False` | Print iterator debug logs for this node run. |
 | `filename_with_ext` | `BOOLEAN` | `True` | Whether `FILE_NAME` includes extension. |
 
 #### Outputs
@@ -97,6 +102,7 @@ Supports: `.txt/.md/.prompt/.json/.jsonl`
 | `encoding` | `STRING` | `"utf-8"` | File encoding. |
 | `loop_mode` | `ENUM` | `stop` | `loop/stop/hold_last`. |
 | `reset` | `BOOLEAN` | `False` | Edge-triggered reset signal. |
+| `enable_log` | `BOOLEAN` | `False` | Print iterator debug logs for this node run. |
 
 #### Outputs
 
@@ -122,6 +128,7 @@ Loads multiple text items from a single file.
 | `encoding` | `STRING` | `"utf-8"` | File encoding. |
 | `loop_mode` | `ENUM` | `stop` | `loop/stop/hold_last`. |
 | `reset` | `BOOLEAN` | `False` | Edge-triggered reset signal. |
+| `enable_log` | `BOOLEAN` | `False` | Print iterator debug logs for this node run. |
 
 #### Outputs
 
@@ -169,3 +176,9 @@ python -m pytest
 
 - Cursor state is stored in `.iterator_state.json`
 - The file is ignored by git
+
+## Logging
+
+- Set `enable_log=True` on a node when you want runtime traces.
+- Logs are printed to the ComfyUI console with prefix `[SimpleIterator]`.
+- Any parameter value longer than 64 characters is truncated automatically.

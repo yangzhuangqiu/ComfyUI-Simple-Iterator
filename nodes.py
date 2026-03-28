@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List
@@ -28,6 +29,50 @@ TEXT_EXTENSIONS = {".txt", ".md", ".prompt", ".json", ".jsonl"}
 
 LOOP_MODES = ("loop", "stop", "hold_last")
 ORDER_MODES = ("name_asc", "name_desc", "mtime_asc", "mtime_desc")
+
+
+_LOGGER = logging.getLogger("ComfyUI.SimpleIterator")
+if not _LOGGER.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("[SimpleIterator] %(message)s"))
+    _LOGGER.addHandler(_handler)
+_LOGGER.propagate = False
+_LOGGER.setLevel(logging.INFO)
+_LOG_VALUE_MAX_CHARS = 64
+
+
+def _node_log(enabled: bool, message: str, *args) -> None:
+    """按需输出节点调试日志，默认关闭避免刷屏。"""
+    if not enabled:
+        return
+    _LOGGER.info(message, *args)
+
+
+def _format_log_value(value) -> str:
+    """将任意参数值格式化为日志文本，并在超过上限时截断。"""
+    if isinstance(value, torch.Tensor):
+        rendered = f"Tensor(shape={tuple(value.shape)}, dtype={value.dtype})"
+    elif isinstance(value, Path):
+        rendered = str(value)
+    else:
+        try:
+            rendered = json.dumps(value, ensure_ascii=False)
+        except (TypeError, ValueError):
+            rendered = repr(value)
+
+    if len(rendered) <= _LOG_VALUE_MAX_CHARS:
+        return rendered
+    return rendered[: _LOG_VALUE_MAX_CHARS - 3] + "..."
+
+
+def _log_params(enabled: bool, node_name: str, phase: str, payload: dict) -> None:
+    """输出节点参数日志，phase 支持 inputs/outputs。"""
+    if not enabled:
+        return
+    formatted = ", ".join(
+        f"{key}={_format_log_value(value)}" for key, value in payload.items()
+    )
+    _node_log(enabled, "[%s] %s: %s", node_name, phase, formatted)
 
 
 def _normalize_path(path: str) -> Path:
@@ -332,6 +377,7 @@ class IteratorLoadImage:
       - `False`（默认）: 走正常缓存判定，输入与游标未变化时可以复用缓存结果。
       - `True`: 忽略缓存判定，每次执行都重新运行节点逻辑。
       - “每次执行”按节点被调度次数算；例如 `Batch Count=10` 通常就是执行 10 次。
+    - `enable_log`: 是否输出该节点运行日志（默认 `False`，建议排查问题时打开）。
     - `filename_with_ext`: 输出文件名是否保留后缀。
 
     输出参数:
@@ -359,6 +405,10 @@ class IteratorLoadImage:
                     "BOOLEAN",
                     {"default": False, "label_on": "enabled", "label_off": "disabled"},
                 ),
+                "enable_log": (
+                    "BOOLEAN",
+                    {"default": False, "label_on": "enabled", "label_off": "disabled"},
+                ),
                 "filename_with_ext": (
                     "BOOLEAN",
                     {"default": True, "label_on": "with_ext", "label_off": "without_ext"},
@@ -383,6 +433,7 @@ class IteratorLoadImage:
         loop_mode="stop",
         reset=False,
         load_always=False,
+        enable_log=False,
         filename_with_ext=True,
         unique_id=None,
     ):
@@ -402,7 +453,7 @@ class IteratorLoadImage:
         source_key = f"{_normalize_path(directory)}|{pattern}|{recursive}|{order}"
         scope_key = stable_scope("image", unique_id or "", source_key)
         cursor = IteratorStateStore.peek_cursor(scope_key)
-        return hash((scope_key, fingerprint, cursor, reset, loop_mode))
+        return hash((scope_key, fingerprint, cursor, reset, loop_mode, enable_log))
 
     def run(
         self,
@@ -413,13 +464,40 @@ class IteratorLoadImage:
         loop_mode,
         reset,
         load_always=False,
+        enable_log=False,
         filename_with_ext=True,
         unique_id=None,
     ):
         """按游标读取下一张图片并输出路径与进度。"""
+        _log_params(
+            enable_log,
+            "Image",
+            "inputs",
+            {
+                "directory": directory,
+                "pattern": pattern,
+                "recursive": recursive,
+                "order": order,
+                "loop_mode": loop_mode,
+                "reset": reset,
+                "load_always": load_always,
+                "filename_with_ext": filename_with_ext,
+                "unique_id": unique_id,
+            },
+        )
         paths = _filter_and_collect(directory, pattern, recursive, IMAGE_EXTENSIONS, order)
         if not paths:
             raise FileNotFoundError(f"No image files found in directory: {directory}")
+        _node_log(
+            enable_log,
+            "[Image] scanned=%s pattern=%s recursive=%s order=%s loop_mode=%s reset=%s",
+            len(paths),
+            pattern,
+            recursive,
+            order,
+            loop_mode,
+            reset,
+        )
 
         source_key = f"{_normalize_path(directory)}|{pattern}|{recursive}|{order}"
         scope_key = stable_scope("image", unique_id or "", source_key)
@@ -427,8 +505,28 @@ class IteratorLoadImage:
             scope_key=scope_key, total=len(paths), reset=reset, loop_mode=loop_mode
         )
         selected = paths[index]
+        _node_log(
+            enable_log,
+            "[Image] picked index=%s/%s file=%s",
+            index,
+            len(paths) - 1,
+            selected,
+        )
         image, mask = _load_image_tensor(selected)
         file_name = format_output_filename(selected, filename_with_ext)
+        _log_params(
+            enable_log,
+            "Image",
+            "outputs",
+            {
+                "IMAGE": image,
+                "MASK": mask,
+                "FILE_PATH": str(selected),
+                "FILE_NAME": file_name,
+                "INDEX": index,
+                "TOTAL": len(paths),
+            },
+        )
         return image, mask, str(selected), file_name, index, len(paths)
 
 
@@ -446,6 +544,7 @@ class IteratorLoadVideoPath:
     - `loop_mode`: 耗尽策略，默认 `stop`，`loop/stop/hold_last`。
     - `reset`: 沿触发复位信号，仅在 `False->True` 时复位到首项。
     - `load_always`: 强制每次运行都视为节点已变化。
+    - `enable_log`: 是否输出该节点运行日志（默认 `False`）。
     - `filename_with_ext`: 输出文件名是否保留后缀，默认 `True`。
 
     输出参数:
@@ -468,6 +567,10 @@ class IteratorLoadVideoPath:
             },
             "optional": {
                 "load_always": (
+                    "BOOLEAN",
+                    {"default": False, "label_on": "enabled", "label_off": "disabled"},
+                ),
+                "enable_log": (
                     "BOOLEAN",
                     {"default": False, "label_on": "enabled", "label_off": "disabled"},
                 ),
@@ -495,6 +598,7 @@ class IteratorLoadVideoPath:
         loop_mode="stop",
         reset=False,
         load_always=False,
+        enable_log=False,
         filename_with_ext=True,
         unique_id=None,
     ):
@@ -509,7 +613,7 @@ class IteratorLoadVideoPath:
         source_key = f"{_normalize_path(directory)}|{pattern}|{recursive}|{order}"
         scope_key = stable_scope("video", unique_id or "", source_key)
         cursor = IteratorStateStore.peek_cursor(scope_key)
-        return hash((scope_key, fingerprint, cursor, reset, loop_mode))
+        return hash((scope_key, fingerprint, cursor, reset, loop_mode, enable_log))
 
     def run(
         self,
@@ -520,13 +624,40 @@ class IteratorLoadVideoPath:
         loop_mode,
         reset,
         load_always=False,
+        enable_log=False,
         filename_with_ext=True,
         unique_id=None,
     ):
         """按游标输出下一条视频路径与进度信息。"""
+        _log_params(
+            enable_log,
+            "Video",
+            "inputs",
+            {
+                "directory": directory,
+                "pattern": pattern,
+                "recursive": recursive,
+                "order": order,
+                "loop_mode": loop_mode,
+                "reset": reset,
+                "load_always": load_always,
+                "filename_with_ext": filename_with_ext,
+                "unique_id": unique_id,
+            },
+        )
         paths = _filter_and_collect(directory, pattern, recursive, VIDEO_EXTENSIONS, order)
         if not paths:
             raise FileNotFoundError(f"No video files found in directory: {directory}")
+        _node_log(
+            enable_log,
+            "[Video] scanned=%s pattern=%s recursive=%s order=%s loop_mode=%s reset=%s",
+            len(paths),
+            pattern,
+            recursive,
+            order,
+            loop_mode,
+            reset,
+        )
 
         source_key = f"{_normalize_path(directory)}|{pattern}|{recursive}|{order}"
         scope_key = stable_scope("video", unique_id or "", source_key)
@@ -534,7 +665,25 @@ class IteratorLoadVideoPath:
             scope_key=scope_key, total=len(paths), reset=reset, loop_mode=loop_mode
         )
         selected = paths[index]
+        _node_log(
+            enable_log,
+            "[Video] picked index=%s/%s file=%s",
+            index,
+            len(paths) - 1,
+            selected,
+        )
         file_name = format_output_filename(selected, filename_with_ext)
+        _log_params(
+            enable_log,
+            "Video",
+            "outputs",
+            {
+                "VIDEO_PATH": str(selected),
+                "FILE_NAME": file_name,
+                "INDEX": index,
+                "TOTAL": len(paths),
+            },
+        )
         return str(selected), file_name, index, len(paths)
 
 
@@ -552,6 +701,7 @@ class IteratorLoadTextFromDir:
     - `encoding`: 文件读取编码。
     - `loop_mode`: 耗尽策略，默认 `stop`，`loop/stop/hold_last`。
     - `reset`: 沿触发复位信号，仅在 `False->True` 时复位到首项。
+    - `enable_log`: 是否输出该节点运行日志（默认 `False`）。
 
     输出参数:
     - `TEXT`: 当前文本内容（整个文件内容）。
@@ -572,6 +722,12 @@ class IteratorLoadTextFromDir:
                 "loop_mode": (LOOP_MODES, {"default": "stop"}),
                 "reset": ("BOOLEAN", {"default": False}),
             },
+            "optional": {
+                "enable_log": (
+                    "BOOLEAN",
+                    {"default": False, "label_on": "enabled", "label_off": "disabled"},
+                ),
+            },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
 
@@ -591,6 +747,7 @@ class IteratorLoadTextFromDir:
         encoding="utf-8",
         loop_mode="stop",
         reset=False,
+        enable_log=False,
         unique_id=None,
     ):
         """计算目录文本源变更指纹，不执行索引推进。"""
@@ -602,7 +759,7 @@ class IteratorLoadTextFromDir:
         source_key = f"{_normalize_path(directory)}|{pattern}|{recursive}|{order}|{encoding}"
         scope_key = stable_scope("text_dir", unique_id or "", source_key)
         cursor = IteratorStateStore.peek_cursor(scope_key)
-        return hash((scope_key, fingerprint, cursor, reset, loop_mode))
+        return hash((scope_key, fingerprint, cursor, reset, loop_mode, enable_log))
 
     def run(
         self,
@@ -613,9 +770,25 @@ class IteratorLoadTextFromDir:
         encoding,
         loop_mode,
         reset,
+        enable_log=False,
         unique_id=None,
     ):
         """按游标输出下一条目录文本及来源路径。"""
+        _log_params(
+            enable_log,
+            "TextDir",
+            "inputs",
+            {
+                "directory": directory,
+                "pattern": pattern,
+                "recursive": recursive,
+                "order": order,
+                "encoding": encoding,
+                "loop_mode": loop_mode,
+                "reset": reset,
+                "unique_id": unique_id,
+            },
+        )
         items = _load_text_items_from_dir(
             directory=directory,
             pattern=pattern,
@@ -625,6 +798,16 @@ class IteratorLoadTextFromDir:
         )
         if not items:
             raise ValueError("No text files found in directory with current filter settings.")
+        _node_log(
+            enable_log,
+            "[TextDir] scanned=%s pattern=%s recursive=%s order=%s loop_mode=%s reset=%s",
+            len(items),
+            pattern,
+            recursive,
+            order,
+            loop_mode,
+            reset,
+        )
 
         source_key = f"{_normalize_path(directory)}|{pattern}|{recursive}|{order}|{encoding}"
         scope_key = stable_scope("text_dir", unique_id or "", source_key)
@@ -632,6 +815,24 @@ class IteratorLoadTextFromDir:
             scope_key=scope_key, total=len(items), reset=reset, loop_mode=loop_mode
         )
         item = items[index]
+        _node_log(
+            enable_log,
+            "[TextDir] picked index=%s/%s source=%s",
+            index,
+            len(items) - 1,
+            item.source_path,
+        )
+        _log_params(
+            enable_log,
+            "TextDir",
+            "outputs",
+            {
+                "TEXT": item.text,
+                "SOURCE_PATH": item.source_path,
+                "INDEX": index,
+                "TOTAL": len(items),
+            },
+        )
         return item.text, item.source_path, index, len(items)
 
 
@@ -650,6 +851,7 @@ class IteratorLoadTextFromFile:
     - `encoding`: 文件读取编码。
     - `loop_mode`: 耗尽策略，默认 `stop`，`loop/stop/hold_last`。
     - `reset`: 沿触发复位信号，仅在 `False->True` 时复位到首项。
+    - `enable_log`: 是否输出该节点运行日志（默认 `False`）。
 
     输出参数:
     - `TEXT`: 当前文本片段或记录内容。
@@ -670,6 +872,12 @@ class IteratorLoadTextFromFile:
                 "loop_mode": (LOOP_MODES, {"default": "stop"}),
                 "reset": ("BOOLEAN", {"default": False}),
             },
+            "optional": {
+                "enable_log": (
+                    "BOOLEAN",
+                    {"default": False, "label_on": "enabled", "label_off": "disabled"},
+                ),
+            },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
 
@@ -689,6 +897,7 @@ class IteratorLoadTextFromFile:
         encoding="utf-8",
         loop_mode="stop",
         reset=False,
+        enable_log=False,
         unique_id=None,
     ):
         """计算单文件文本源变更指纹，不执行索引推进。"""
@@ -705,7 +914,7 @@ class IteratorLoadTextFromFile:
         source_key = f"{_normalize_path(file_path)}|{parse_mode}|{delimiter}|{json_field}|{encoding}"
         scope_key = stable_scope("text_file", unique_id or "", source_key)
         cursor = IteratorStateStore.peek_cursor(scope_key)
-        return hash((scope_key, fingerprint, cursor, reset, loop_mode))
+        return hash((scope_key, fingerprint, cursor, reset, loop_mode, enable_log))
 
     def run(
         self,
@@ -716,9 +925,25 @@ class IteratorLoadTextFromFile:
         encoding,
         loop_mode,
         reset,
+        enable_log=False,
         unique_id=None,
     ):
         """按游标输出下一条文件文本及来源位置。"""
+        _log_params(
+            enable_log,
+            "TextFile",
+            "inputs",
+            {
+                "file_path": file_path,
+                "parse_mode": parse_mode,
+                "delimiter": delimiter,
+                "json_field": json_field,
+                "encoding": encoding,
+                "loop_mode": loop_mode,
+                "reset": reset,
+                "unique_id": unique_id,
+            },
+        )
         items = _load_text_items_from_file(
             file_path=file_path,
             parse_mode=parse_mode,
@@ -728,6 +953,15 @@ class IteratorLoadTextFromFile:
         )
         if not items:
             raise ValueError("No text items found in file with current parse settings.")
+        _node_log(
+            enable_log,
+            "[TextFile] parsed=%s mode=%s loop_mode=%s reset=%s file=%s",
+            len(items),
+            parse_mode,
+            loop_mode,
+            reset,
+            file_path,
+        )
 
         source_key = f"{_normalize_path(file_path)}|{parse_mode}|{delimiter}|{json_field}|{encoding}"
         scope_key = stable_scope("text_file", unique_id or "", source_key)
@@ -735,6 +969,24 @@ class IteratorLoadTextFromFile:
             scope_key=scope_key, total=len(items), reset=reset, loop_mode=loop_mode
         )
         item = items[index]
+        _node_log(
+            enable_log,
+            "[TextFile] picked index=%s/%s source=%s",
+            index,
+            len(items) - 1,
+            item.source_path,
+        )
+        _log_params(
+            enable_log,
+            "TextFile",
+            "outputs",
+            {
+                "TEXT": item.text,
+                "SOURCE_PATH": item.source_path,
+                "INDEX": index,
+                "TOTAL": len(items),
+            },
+        )
         return item.text, item.source_path, index, len(items)
 
 

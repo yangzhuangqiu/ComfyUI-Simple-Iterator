@@ -24,6 +24,9 @@
 - `load_always`（图片/视频节点）
   - `False`：按正常缓存判定
   - `True`：每次都强制执行
+- `enable_log`（所有节点）
+  - `False`：不输出运行日志
+  - `True`：在 ComfyUI 控制台输出运行日志
 
 ## 节点说明
 
@@ -42,6 +45,7 @@
 | `loop_mode` | `ENUM` | `stop` | `loop/stop/hold_last` |
 | `reset` | `BOOLEAN` | `False` | 沿触发复位信号 |
 | `load_always` | `BOOLEAN` | `False` | 是否每次强制执行 |
+| `enable_log` | `BOOLEAN` | `False` | 是否输出本次运行日志 |
 | `filename_with_ext` | `BOOLEAN` | `True` | `FILE_NAME` 是否带后缀 |
 
 #### 输出参数
@@ -70,6 +74,7 @@
 | `loop_mode` | `ENUM` | `stop` | `loop/stop/hold_last` |
 | `reset` | `BOOLEAN` | `False` | 沿触发复位信号 |
 | `load_always` | `BOOLEAN` | `False` | 是否每次强制执行 |
+| `enable_log` | `BOOLEAN` | `False` | 是否输出本次运行日志 |
 | `filename_with_ext` | `BOOLEAN` | `True` | `FILE_NAME` 是否带后缀 |
 
 #### 输出参数
@@ -97,6 +102,7 @@
 | `encoding` | `STRING` | `"utf-8"` | 文件编码 |
 | `loop_mode` | `ENUM` | `stop` | `loop/stop/hold_last` |
 | `reset` | `BOOLEAN` | `False` | 沿触发复位信号 |
+| `enable_log` | `BOOLEAN` | `False` | 是否输出本次运行日志 |
 
 #### 输出参数
 
@@ -122,6 +128,7 @@
 | `encoding` | `STRING` | `"utf-8"` | 文件编码 |
 | `loop_mode` | `ENUM` | `stop` | `loop/stop/hold_last` |
 | `reset` | `BOOLEAN` | `False` | 沿触发复位信号 |
+| `enable_log` | `BOOLEAN` | `False` | 是否输出本次运行日志 |
 
 #### 输出参数
 
@@ -167,3 +174,9 @@ python -m pytest
 
 - 游标状态保存在 `.iterator_state.json`
 - 该文件已加入 git ignore
+
+## 日志
+
+- 将任一节点的 `enable_log` 设为 `True`，即可输出该节点运行日志。
+- 日志会打印到 ComfyUI 控制台，前缀为 `[SimpleIterator]`。
+- 任意参数值超过 64 个字符时会自动截断。
