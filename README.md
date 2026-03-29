@@ -176,6 +176,28 @@ python -m pytest
 
 - Cursor state is stored in `.iterator_state.json`
 - The file is ignored by git
+- State entries are auto-pruned to avoid unbounded growth:
+  - TTL cleanup: remove entries not updated for 30 days
+  - Capacity cleanup: keep at most 2000 most recently updated entries
+- GC settings are configurable with priority:
+  - Environment variables (highest)
+  - `iterator_config.json`
+  - Built-in defaults (lowest)
+
+### GC Config
+
+Create `iterator_config.json` in the plugin root, for example:
+
+```json
+{
+  "state_ttl_seconds": 2592000,
+  "state_max_entries": 2000
+}
+```
+
+Environment variable override keys:
+- `SIMPLE_ITERATOR_STATE_TTL_SECONDS` (`>= 0`, `0` means disable TTL cleanup)
+- `SIMPLE_ITERATOR_STATE_MAX_ENTRIES` (`>= 1`)
 
 ## Logging
 

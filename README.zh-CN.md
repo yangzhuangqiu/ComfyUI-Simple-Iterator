@@ -174,6 +174,28 @@ python -m pytest
 
 - 游标状态保存在 `.iterator_state.json`
 - 该文件已加入 git ignore
+- 状态条目会自动清理，避免无限膨胀：
+  - TTL 清理：30 天未更新的条目会删除
+  - 容量清理：最多保留最近更新的 2000 条
+- 清理参数支持配置，优先级如下：
+  - 环境变量（最高）
+  - `iterator_config.json`
+  - 内置默认值（最低）
+
+### 清理参数配置
+
+在插件根目录创建 `iterator_config.json`，示例：
+
+```json
+{
+  "state_ttl_seconds": 2592000,
+  "state_max_entries": 2000
+}
+```
+
+环境变量覆盖键：
+- `SIMPLE_ITERATOR_STATE_TTL_SECONDS`（`>= 0`，`0` 表示关闭 TTL 清理）
+- `SIMPLE_ITERATOR_STATE_MAX_ENTRIES`（`>= 1`）
 
 ## 日志
 
