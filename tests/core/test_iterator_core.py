@@ -7,6 +7,8 @@ import pytest
 
 from iterator_core import IteratorStateStore, format_output_filename, stable_scope
 
+pytestmark = pytest.mark.core
+
 
 def _reset_store(state_path: Path) -> None:
     state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -183,4 +185,7 @@ def test_gc_settings_invalid_values_fallback(monkeypatch):
         assert IteratorStateStore._max_entries == IteratorStateStore._default_max_entries
     finally:
         _cleanup(state_path)
+
+
+
 

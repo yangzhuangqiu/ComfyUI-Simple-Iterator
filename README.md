@@ -165,11 +165,24 @@ Notes:
 
 ## Testing
 
-Run tests:
+Core layer tests (no ComfyUI runtime dependency):
 
 ```bash
 python -m pip install pytest
-python -m pytest
+python -m pytest tests/core -m core -q
+```
+
+Runtime layer tests (optional, requires `torch`/ComfyUI runtime):
+
+```bash
+RUN_RUNTIME_TESTS=1 python -m pytest tests/runtime -m runtime -q
+```
+
+Release quality gate (version + lint + core tests):
+
+```bash
+python -m pip install pytest ruff
+python scripts/release_gate.py
 ```
 
 ## State File
@@ -198,6 +211,9 @@ Create `iterator_config.json` in the plugin root, for example:
 Environment variable override keys:
 - `SIMPLE_ITERATOR_STATE_TTL_SECONDS` (`>= 0`, `0` means disable TTL cleanup)
 - `SIMPLE_ITERATOR_STATE_MAX_ENTRIES` (`>= 1`)
+
+Tracked example file:
+- `iterator_config.example.json` (copy to `iterator_config.json` for local overrides)
 
 ## Logging
 
