@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-03-30
+
+### Added
+- Added release quality gate script `scripts/release_gate.py` for version/lint/core-test checks.
+- Added GitHub Actions workflow `.github/workflows/quality-gate.yml`.
+- Added test layering with `tests/core` and optional `tests/runtime`.
+- Added `tests/runtime/test_runtime_smoke.py` for runtime-layer smoke validation.
+
+### Changed
+- Bumped package version to `0.1.1`.
+- Updated root import behavior to support core tests without runtime deps via env gate.
+- Updated README and README.zh-CN testing guidance to reflect layered testing and release gate.
+
 ## [0.1.0] - 2026-03-28
 
 ### Added

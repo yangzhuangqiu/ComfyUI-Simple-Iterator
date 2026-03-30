@@ -209,9 +209,13 @@ __marimo__/
 */.*
 .*
 !.gitignore
+!/.github/
+!/.github/**
+
 
 # ComfyUI-Simple-Iterator runtime state
 .iterator_state.json
+iterator_config.json
 
 # Test temp state
 tests/.tmp/

@@ -165,15 +165,55 @@ python -m pip install -r requirements.txt
 
 ## 测试
 
+核心层测试（不依赖 ComfyUI 运行时）：
+
 ```bash
 python -m pip install pytest
-python -m pytest
+python -m pytest tests/core -m core -q
+```
+
+运行时层测试（可选，依赖 `torch`/ComfyUI 运行时）：
+
+```bash
+RUN_RUNTIME_TESTS=1 python -m pytest tests/runtime -m runtime -q
+```
+
+发布门禁（版本一致性 + lint + 核心测试）：
+
+```bash
+python -m pip install pytest ruff
+python scripts/release_gate.py
 ```
 
 ## 状态文件
 
 - 游标状态保存在 `.iterator_state.json`
 - 该文件已加入 git ignore
+- 状态条目会自动清理，避免无限膨胀：
+  - TTL 清理：30 天未更新的条目会删除
+  - 容量清理：最多保留最近更新的 2000 条
+- 清理参数支持配置，优先级如下：
+  - 环境变量（最高）
+  - `iterator_config.json`
+  - 内置默认值（最低）
+
+### 清理参数配置
+
+在插件根目录创建 `iterator_config.json`，示例：
+
+```json
+{
+  "state_ttl_seconds": 2592000,
+  "state_max_entries": 2000
+}
+```
+
+环境变量覆盖键：
+- `SIMPLE_ITERATOR_STATE_TTL_SECONDS`（`>= 0`，`0` 表示关闭 TTL 清理）
+- `SIMPLE_ITERATOR_STATE_MAX_ENTRIES`（`>= 1`）
+
+已跟踪的示例配置文件：
+- `iterator_config.example.json`（复制为 `iterator_config.json` 后本地修改）
 
 ## 日志
 

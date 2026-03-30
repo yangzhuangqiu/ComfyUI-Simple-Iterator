@@ -1,0 +1,4 @@
+{
+  "state_ttl_seconds": 2592000,
+  "state_max_entries": 2000
+}
