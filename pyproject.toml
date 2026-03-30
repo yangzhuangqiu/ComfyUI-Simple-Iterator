@@ -1,6 +1,6 @@
 [project]
 name = "ComfyUI-Simple-Iterator"
-version = "0.1.0"
+version = "0.1.1"
 description = "ComfyUI custom nodes for one-sample-per-run iteration across image, video, and text sources."
 readme = "README.md"
 requires-python = ">=3.10"
